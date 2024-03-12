@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use std::io::{self, Write};
 
 #[derive(Deserialize)]
 struct ApiResponse {
@@ -28,26 +27,11 @@ struct CachedResponse {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let matches = App::new("Currency Converter")
         .version("1.0")
-        .about("Converts amounts between different currencies using real-time exchange rate data.")
-        .arg(Arg::with_name("source")
-            .short('s')
-            .long("source")
-            .help("Sets the source currency code.")
-            .takes_value(true))
-        .arg(Arg::with_name("target")
-            .short('t')
-            .long("target")
-            .help("Sets the target currency code.")
-            .takes_value(true))
-        .arg(Arg::with_name("amount")
-            .short('a')
-            .long("amount")
-            .help("Sets the amount to be converted.")
-            .takes_value(true))
-        .arg(Arg::with_name("interactive")
-            .short('i')
-            .long("interactive")
-            .help("Activates interactive mode."))
+        .about("Converts amounts between different currencies.")
+        .arg(Arg::with_name("source").long("source").takes_value(true).help("Source currency code"))
+        .arg(Arg::with_name("target").long("target").takes_value(true).help("Target currency code"))
+        .arg(Arg::with_name("amount").long("amount").takes_value(true).help("Amount to be converted"))
+        .arg(Arg::with_name("interactive").long("interactive").help("Interactive mode"))
         .get_matches();
 
     if matches.is_present("interactive") {
@@ -69,13 +53,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 
+
 async fn run_interactive_mode() -> Result<(), Box<dyn std::error::Error>> {
     println!("Welcome to the interactive currency converter!");
 
     loop {
-        println!("Wybierz opcję:");
-        println!("1 - Sprawdź dostępne waluty i ich aktualne kursy");
-        println!("2 - Wymiana dwóch podanych walut");
+        println!("Select an option:");
+        println!("1 - Check available currencies and their current rates");
+        println!("2 - Exchange of two given currencies");
 
         let option = read_input();
 
@@ -95,18 +80,18 @@ async fn run_interactive_mode() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Enter the target currency (e.g., EUR):");
                 let target_currency = read_input();
                 println!("Enter the amount to convert:");
-                let amount: f64 = read_input().parse().unwrap_or(0.0); // Uproszczona obsługa błędów
+                let amount: f64 = read_input().parse().unwrap_or(1.0); // W przypadku błędu
                 if let Err(e) = exchange_currency(&base_currency, &target_currency, amount).await {
                     println!("Error: {}", e);
                 }
             },
-            _ => println!("Niepoprawna opcja."),
+            _ => println!("Invalid option."),
         };
 
-        println!("Czy to wszystko? (tak/nie)");
+        println!("Is that all? (yes/no)");
         let answer = read_input();
 
-        if answer.eq_ignore_ascii_case("tak") {
+        if answer.eq_ignore_ascii_case("yes") {
             break;
         }
     }
@@ -141,9 +126,9 @@ async fn fetch_currency_data(word: &str, base_currency: &str, currency2: &str) -
             });
             Ok(body)
         },
-        StatusCode::NOT_FOUND => Err("Podano niepoprawną walutę.".into()),
-        StatusCode::TOO_MANY_REQUESTS => Err("Przekroczono limit zapytań do API.".into()),
-        _ => Err("Wystąpił nieoczekiwany błąd.".into())
+        StatusCode::NOT_FOUND => Err("Incorrect currency entered.".into()),
+        StatusCode::TOO_MANY_REQUESTS => Err("API request limit exceeded.".into()),
+        _ => Err("An unexpected error occurred.".into())
     }
 }
 
