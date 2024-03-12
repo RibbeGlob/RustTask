@@ -1,11 +1,11 @@
-use reqwest::Error;
+use clap::{App, Arg};
 use reqwest::StatusCode;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::io::{self, Write};
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+use std::io::{self, Write};
 
 #[derive(Deserialize)]
 struct ApiResponse {
@@ -14,7 +14,6 @@ struct ApiResponse {
 
 #[derive(Deserialize)]
 struct ExchangeRateResponse {
-    #[serde(rename = "conversion_rate")]
     conversion_rate: f64,
 }
 
@@ -25,9 +24,54 @@ struct CachedResponse {
     expiry: Instant,
 }
 
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let matches = App::new("Currency Converter")
+        .version("1.0")
+        .about("Converts amounts between different currencies using real-time exchange rate data.")
+        .arg(Arg::with_name("source")
+            .short('s')
+            .long("source")
+            .help("Sets the source currency code.")
+            .takes_value(true))
+        .arg(Arg::with_name("target")
+            .short('t')
+            .long("target")
+            .help("Sets the target currency code.")
+            .takes_value(true))
+        .arg(Arg::with_name("amount")
+            .short('a')
+            .long("amount")
+            .help("Sets the amount to be converted.")
+            .takes_value(true))
+        .arg(Arg::with_name("interactive")
+            .short('i')
+            .long("interactive")
+            .help("Activates interactive mode."))
+        .get_matches();
+
+    if matches.is_present("interactive") {
+        run_interactive_mode().await?;
+    } 
+    else {
+        let source_currency = matches.value_of("source").expect("Source currency is required in non-interactive mode.");
+        let target_currency = matches.value_of("target").unwrap_or_default();
+        let amount = matches.value_of("amount").unwrap_or("1").parse::<f64>().unwrap_or(1.0);
+
+        if target_currency.is_empty() {
+            show_available_currencies(source_currency).await?;
+        } else {
+            exchange_currency(source_currency, target_currency, amount).await?;
+        }
+    }
+
+    Ok(())
+}
+
+
+async fn run_interactive_mode() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Welcome to the interactive currency converter!");
+
     loop {
         println!("Wybierz opcję:");
         println!("1 - Sprawdź dostępne waluty i ich aktualne kursy");
@@ -35,19 +79,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let option = read_input();
 
-        let result = match option.as_str() {
-            "1" => show_available_currencies().await,
-            "2" => exchange_currency().await,
-            _ => {
-                println!("Niepoprawna opcja.");
-                continue;
+        match option.as_str() {
+            "1" => {
+                // Załóżmy, że show_available_currencies przyjmuje argument określający walutę bazową
+                println!("Enter your base currency (e.g., USD):");
+                let base_currency = read_input();
+                if let Err(e) = show_available_currencies(&base_currency).await {
+                    println!("Error: {}", e);
+                }
             },
+            "2" => {
+                // Załóżmy, że exchange_currency przyjmuje argumenty: walutę bazową, docelową i kwotę
+                println!("Enter your base currency (e.g., USD):");
+                let base_currency = read_input();
+                println!("Enter the target currency (e.g., EUR):");
+                let target_currency = read_input();
+                println!("Enter the amount to convert:");
+                let amount: f64 = read_input().parse().unwrap_or(0.0); // Uproszczona obsługa błędów
+                if let Err(e) = exchange_currency(&base_currency, &target_currency, amount).await {
+                    println!("Error: {}", e);
+                }
+            },
+            _ => println!("Niepoprawna opcja."),
         };
-
-        if let Err(e) = result {
-            println!("Error: {}", e);
-            continue; // Powrót do menu głównego zamiast kończenia programu
-        }
 
         println!("Czy to wszystko? (tak/nie)");
         let answer = read_input();
@@ -59,6 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
 
 async fn fetch_currency_data(word: &str, base_currency: &str, currency2: &str) -> Result<String, Box<dyn std::error::Error>> {
     let cache_key = format!("{}-{}", base_currency, currency2);
@@ -93,62 +148,35 @@ async fn fetch_currency_data(word: &str, base_currency: &str, currency2: &str) -
 }
 
 
-async fn show_available_currencies() -> Result<(), Box<dyn std::error::Error>> {
+async fn show_available_currencies(base_currency: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let body = fetch_currency_data("latest", base_currency, "").await?;
+    let response: ApiResponse = serde_json::from_str(&body)?;
 
-    println!("Enter your base currency (e.g. USD):");
-    let base_currency: String = read_input();
-
-    // Wywołaj funkcję fetch_currency_data, aby pobrać dane
-    let body = fetch_currency_data("latest", &base_currency,"").await?;
-
-    // Deserializacja treści odpowiedzi do struktury ApiResponse
-    let response: ApiResponse = serde_json::from_str(&body)
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-
-    // Przekonwertowanie HashMap na wektor par (klucz, wartość)
     let mut rates: Vec<(&String, &f64)> = response.conversion_rates.iter().collect();
-
-    // Sortowanie wektora od największego do najmniejszego kursu
     rates.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    // Wyświetlenie posortowanych kursów walut 
-    println!("Kursy walut (od największego do najmniejszego):");
+    println!("Exchange rates for {}:", base_currency);
     for (code, rate) in rates {
-        println!("{}: {}", code, rate);
+        println!("{}: {:.4}", code, rate);
     }
 
     Ok(())
 }
 
-async fn exchange_currency() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Enter your base currency (e.g. USD):");
-    let base_currency = read_input();
 
-    println!("Podaj walutę, na którą chcesz wymienić (np. EUR):");
-    let target_currency = read_input();
-
-    println!("Podaj ilość wymienianej waluty:");
-    let amount: f64 = read_input().parse().expect("Oczekiwano liczby");
-
-    let target = format!("/{}", target_currency);
-    let body = fetch_currency_data("pair", &base_currency,&target).await?;
-
-    // Poprawne deserializowanie `String` do `ExchangeRateResponse`
-    let response: ExchangeRateResponse = serde_json::from_str(&body)
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+async fn exchange_currency(source_currency: &str, target_currency: &str, amount: f64) -> Result<(), Box<dyn std::error::Error>> {
+    let body = fetch_currency_data("pair", source_currency, &format!("/{}", target_currency)).await?;
+    let response: ExchangeRateResponse = serde_json::from_str(&body)?;
 
     let converted_amount = amount * response.conversion_rate;
-    println!(
-        "Wymieniasz {} {} na {} przy kursie {}, otrzymasz: {:.2} {}",
-        amount, base_currency, target_currency, response.conversion_rate, converted_amount, target_currency
-    );
+    println!("{} {} = {:.2} {} at an exchange rate of {}", amount, source_currency, converted_amount, target_currency, response.conversion_rate);
 
     Ok(())
 }
 
+
 fn read_input() -> String {
     let mut input = String::new();
-    io::stdout().flush().expect("Błąd przy czyszczeniu bufora");
-    io::stdin().read_line(&mut input).expect("Błąd przy odczycie linii");
+    std::io::stdin().read_line(&mut input).expect("Failed to read line");
     input.trim().to_string()
 }
