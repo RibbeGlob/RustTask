@@ -69,3 +69,8 @@ The above command will show the current Polish zloty exchange rate
 
 ## Error handling
 The application has been designed to handle common errors, such as network errors, incorrect currency codes, or exceeding the API request limit. If an error occurs, the application will display an appropriate message.
+
+If you received the following error while using the program, it means that you entered the incorrect currency abbreviation (this is caused by an incorrect website URL code - this approach allowed to avoid repeating the code multiple times).
+
+![obraz](https://github.com/RibbeGlob/RustTask/assets/108761666/152439ea-b1e0-4bf3-84d7-0da7e449ea50)
+
